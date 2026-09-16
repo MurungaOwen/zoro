@@ -1,0 +1,33 @@
+{
+  "$schema": "https://opencode.ai/config.json",
+  "permission": {
+    "bash": {
+      "*": "allow",
+      "git push*": "deny",
+      "git reset --hard*": "deny",
+      "git clean*": "deny",
+      "rm -rf*": "deny",
+      "*migrate*": "deny",
+      "*prisma*": "deny",
+      "*DROP TABLE*": "deny",
+      "*TRUNCATE*": "deny",
+      "npm publish*": "deny",
+      "npm version*": "deny",
+      "docker push*": "deny",
+      "kubectl delete*": "deny"
+    },
+    "edit": {
+      "*": "allow",
+      "migrations/*": "deny",
+      "*.sql": "deny",
+      "schema.prisma": "deny",
+      ".env*": "deny",
+      ".github/workflows/*": "deny",
+      "package-lock.json": "deny",
+      "package.json": "deny",
+      "Cargo.lock": "deny",
+      "yarn.lock": "deny",
+      "pnpm-lock.yaml": "deny"
+    }
+  }
+}

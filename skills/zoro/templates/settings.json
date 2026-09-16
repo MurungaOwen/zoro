@@ -1,0 +1,14 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(codex exec:*)",
+      "Bash(opencode run:*)",
+      "Bash(git worktree:*)",
+      "Bash(git diff:*)",
+      "Bash(git commit:*)",
+      "Bash(mkdir:*)",
+      "Bash(cat:*)"
+    ]
+  },
+  "defaultMode": "acceptEdits"
+}
