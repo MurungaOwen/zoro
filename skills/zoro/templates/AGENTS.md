@@ -20,16 +20,21 @@ out of context, crashes, or simply isn't the one currently running.
    - **Exists → this is a RESUME, not a fresh start.** Read, in order:
      `state.md` (current status + next step), `plan.md` (acceptance criteria),
      the highest-numbered `report-N.md` and `feedback-N.md`, then run
-     `git log --oneline -10` and `git diff` to confirm what actually landed.
-     Continue from there — do not restart from scratch or re-ask the user what
-     the task is.
+     `git log --oneline -10` and `git diff --stat` (not bare `git diff` — on a
+     large codebase the full diff can be huge; pull `git diff -- <path>` only
+     for files that matter) to confirm what actually landed. Continue from
+     there — do not restart from scratch or re-ask the user what the task is.
    - **Doesn't exist → fresh task.** Create an isolated worktree and branch so
      nothing lands on the user's current branch until reviewed:
      `git worktree add .agent-runs/<task-id>/worktree -b agent/<task-id>`.
      Then write `plan.md` inside `.agent-runs/<task-id>/` (not the worktree).
      All implementation commands run with the CLI's working-directory flag
      pointed at that worktree (`codex exec -C ...`, `opencode run --dir ...`),
-     never in the main checkout.
+     never in the main checkout. On a very large repo where a full checkout
+     per task is itself costly, follow the worktree add with
+     `git -C .agent-runs/<task-id>/worktree sparse-checkout set <paths>`
+     scoped to what the task touches — skip this for normal-sized repos, it's
+     not worth the extra step.
 
 ## Guardrails — never do these autonomously
 

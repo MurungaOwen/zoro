@@ -31,11 +31,17 @@ apply to every backend equally.
    Bash command instead (see "Background mode" below) so you can do other useful
    work meanwhile instead of sitting idle. Every invocation runs inside the
    task's worktree, never the main checkout.
-4. When the result comes back: read the new `report-N.md` and run `git diff`
-   yourself, inside the worktree. Check every acceptance criterion in
-   `plan.md` against the actual diff — do not just trust `report-N.md`'s
-   claims — **and separately check the diff against AGENTS.md's Guardrails
-   list**, even for files/commands `plan.md` never mentioned.
+4. When the result comes back: read the new `report-N.md`, then run
+   `git diff --stat` (not bare `git diff`) inside the worktree first — on a
+   large codebase a full diff can be huge, and `--stat`'s file list is enough
+   to check scope against `plan.md` and the Guardrails list before reading any
+   content. Only pull `git diff -- <path>` for the specific files `plan.md`
+   actually concerns; if `--stat` shows files outside that scope, that's a
+   guardrail question to raise before you spend context reading their
+   content. Check every acceptance criterion against the actual diff — do not
+   just trust `report-N.md`'s claims — **and separately check the changed-file
+   list against AGENTS.md's Guardrails list**, even for files `plan.md` never
+   mentioned.
 5. If any criterion fails, or the diff touches a guardrail item `plan.md`
    didn't explicitly call out: write `feedback-N.md` describing precisely
    what's wrong and what to fix (for a guardrail hit, the fix is "don't touch
