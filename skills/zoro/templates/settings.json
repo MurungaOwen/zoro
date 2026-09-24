@@ -1,13 +1,17 @@
 {
   "permissions": {
     "allow": [
+      "Bash(scripts/run_backend.sh:*)",
       "Bash(codex exec:*)",
       "Bash(opencode run:*)",
-      "Bash(git worktree:*)",
+      "Bash(git worktree add:*)",
+      "Bash(git worktree remove:*)",
+      "Bash(git branch -d:*)",
+      "Bash(git rev-parse:*)",
       "Bash(git diff:*)",
+      "Bash(git log:*)",
       "Bash(git commit:*)",
-      "Bash(mkdir:*)",
-      "Bash(cat:*)"
+      "Bash(mkdir:*)"
     ]
   },
   "defaultMode": "acceptEdits"

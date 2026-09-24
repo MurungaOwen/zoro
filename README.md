@@ -20,8 +20,10 @@ cd <cloned-folder>
 cp -r skills/zoro ~/.claude/skills/
 ```
 
-Codex, Copilot CLI, and Gemini CLI also recognize `~/.agents/skills/` as a
-cross-runtime alias, if you want the skill available there too:
+Some other CLIs are converging on a shared `~/.agents/skills/` directory as a
+cross-runtime alias for skills — check your specific CLI's docs to confirm it
+actually reads that path before relying on it, since (unlike `AGENTS.md`
+itself) this isn't a universally documented convention yet:
 
 ```sh
 cp -r skills/zoro ~/.agents/skills/
@@ -31,11 +33,14 @@ cp -r skills/zoro ~/.agents/skills/
 
 In any project, ask Claude Code to set up the harness (or invoke the `zoro`
 skill directly). It will:
-1. Check that `codex` and/or `opencode` are installed.
-2. Inspect the target repo for real build/test commands.
+1. Check that `codex` and/or `opencode` are installed, and sanity-check that
+   the flags the templates use still exist on your installed version.
+2. Inspect the target repo for real build/test commands — these get run
+   after every implementation round to verify a diff, not just documented.
 3. Write `AGENTS.md`, `CLAUDE.md`, `.claude/settings.json`,
-   `.claude/agents/worker.md`, `scripts/resume.sh`, and `opencode.json`,
-   filled in for that project.
+   `.claude/agents/worker.md`, `scripts/resume.sh`, `scripts/run_backend.sh`,
+   `opencode.json`, and a `.agent-runs/` entry in `.gitignore`, filled in for
+   that project.
 
 ## Guardrails — keeping autonomous runs from doing something you didn't want
 
@@ -54,11 +59,23 @@ Three layers, so no single flag or forgotten check leaves you exposed:
    `-s workspace-write -a never` — sandboxed to the worktree, network access
    off by default, so a stray `git push` has nowhere to go. OpenCode runs
    with `opencode.json`'s explicit `"deny"` rules for the same patterns —
-   confirmed that `opencode run --auto` only auto-approves what would
-   otherwise prompt, and can never override a `"deny"` rule.
+   `opencode run --auto` is designed to only auto-approve what would
+   otherwise prompt, never to override an explicit `"deny"` rule (observed
+   holding in testing at the time this was built; re-verify if OpenCode's
+   permission behavior ever changes underneath you).
 
-None of this stops you from approving something on that list yourself — it
-stops it from happening *without* you noticing.
+None of this stops you from approving something on that list yourself — via
+`AGENTS.md`'s "Approved exceptions to the guardrails" process, which loosens
+layer 3 for exactly one named round and restores it immediately after. It
+stops something from happening *without* you noticing, not from happening at
+all once you've said yes.
+
+Every round also runs through `scripts/run_backend.sh`, which adds two things
+a bare CLI call doesn't give you: it kills a round early if the backend gets
+stuck retrying the same denied action instead of waiting out the full
+timeout, and it runs the project's real build/test commands afterward so a
+round is graded on `test-N.txt`, not on the backend's own claim that things
+work.
 
 ## Switching backends mid-task
 
@@ -76,6 +93,17 @@ with that context handed to it directly. The new backend also reads
 same way Claude honors `CLAUDE.md`), which carries the full resumability
 protocol — so it knows to check `.agent-runs/` before doing anything else even
 if you invoke it without the script.
+
+## Finishing up
+
+Once you've decided what to do with a task's branch — merge it or discard it
+— clean up with `git worktree remove .agent-runs/<task-id>/worktree` and
+`git branch -d agent/<task-id>`. Nothing does this automatically, on purpose:
+the worktree is the only copy of a round's work until it's actually merged.
+The task directory itself (`plan.md`, `state.md`, the numbered
+prompt/report/feedback/log/test files) is safe to leave in place afterward —
+it's `.gitignore`d, small, and doubles as a record of what was tried if the
+same task comes back.
 
 See [`skills/zoro/SKILL.md`](skills/zoro/SKILL.md) for the full process and
 the `.agent-runs/` handoff protocol.
