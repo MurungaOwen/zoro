@@ -34,40 +34,79 @@ shared memory, and none of them can quietly do something you didn't approve.
 
 ## How it works
 
-```
-you: "add CSV export to the reports page"
-        │
-        ▼
-Claude Code (plans + reviews)          Codex / OpenCode (implements)
-────────────────────────────           ───────────────────────────
-1. slug a task-id, create an
-   isolated worktree + branch
-   (agent/<task-id>)
-2. write plan.md — checkable
-   acceptance criteria
-                                   ──►  3. round 1: implement inside
-                                        the worktree only, write
-                                        report-N.md
-4. read report-N.md + test-N.txt,
-   diff the worktree against
-   plan.md AND the guardrail list
-   (not just "did it claim success")
-        │
-        ├─ criteria fail? ──────────►  5. write feedback-N.md,
-        │                                 re-delegate (max 3 rounds)
-        │
-        └─ criteria pass ──► stop, surface the diff to you.
-                              Nothing is merged or pushed until
-                              you say so.
+```mermaid
+flowchart TD
+    You(["You — developer"]) --> Claude["Claude Code<br/>plans the task &amp; reviews every diff"]
+    Claude <--> Files[(".agent-runs/&lt;task-id&gt;/<br/>plan.md, state.md<br/>prompt-N.txt, report-N.md<br/>log-N.txt, test-N.txt<br/>feedback-N.md")]
+    Claude --> Worker["worker subagent<br/>(blocking)"]
+    Worker --> RunBackend["scripts/run_backend.sh<br/>timeout + early-exit on stuck retries<br/>+ real build/test run"]
+    RunBackend --> Backend["Codex CLI / OpenCode CLI<br/>implements inside the worktree —<br/>sandboxed, no network by default"]
+    Backend --> Guard["guardrail backstop<br/>-s workspace-write -a never<br/>opencode.json deny rules"]
+    Backend --> Worktree["git worktree<br/>branch agent/&lt;task-id&gt;"]
+    Worktree -. review + merge<br/>manual, explicit .-> Branch(["Your branch — master/main"])
+
+    classDef neutral fill:#F1F5F9,stroke:#64748B,color:#1E293B,stroke-width:2px;
+    classDef orch fill:#EFF6FF,stroke:#3B82F6,color:#1E3A8A,stroke-width:2px;
+    classDef worker fill:#EEF2FF,stroke:#6366F1,color:#312E81,stroke-width:2px;
+    classDef backend fill:#FEF3C7,stroke:#D97706,color:#78350F,stroke-width:2px;
+    classDef files fill:#F0FDF4,stroke:#16A34A,color:#14532D,stroke-width:2px;
+    classDef worktree fill:#ECFEFF,stroke:#0891B2,color:#164E63,stroke-width:2px;
+    classDef danger fill:#FEF2F2,stroke:#DC2626,color:#7F1D1D,stroke-width:2px;
+
+    class You,Branch neutral;
+    class Claude orch;
+    class Worker,RunBackend worker;
+    class Backend backend;
+    class Files files;
+    class Worktree worktree;
+    class Guard danger;
 ```
 
-Every one of those facts — the plan, each round's prompt, its report, its
-test output, what failed and why — is written to
-`.agent-runs/<task-id>/` as plain numbered files, not held only in whichever
-CLI is currently running. That's what makes step 4 resumable: a fresh Claude
-session, a direct `codex exec`, or `opencode run` can read `state.md`,
-`plan.md`, and the latest report/feedback and continue exactly where the
-task left off — see [Switching backends mid-task](#switching-backends-mid-task).
+Every fact about a task — the plan, each round's prompt, its report, its
+test output, what failed and why — is written to `.agent-runs/<task-id>/` as
+plain numbered files, not held only in whichever CLI is currently running.
+That's what makes the loop resumable: a fresh Claude session, a direct
+`codex exec`, or `opencode run` can read `state.md`, `plan.md`, and the
+latest report/feedback and continue exactly where the task left off — see
+[Switching backends mid-task](#switching-backends-mid-task).
+
+### Task lifecycle
+
+What actually happens between "describe a feature" and "diff ready for
+review," round by round:
+
+```mermaid
+flowchart TD
+    Start(["New task request"]) --> D1{".agent-runs/&lt;task-id&gt;/<br/>already exists?"}
+    D1 -->|yes — resume| Resume["Resume:<br/>read state.md, plan.md, latest<br/>report/feedback, then git log /<br/>git diff --stat to confirm what landed"]
+    D1 -->|no — fresh task| Fresh["Fresh:<br/>check task-id/branch collision →<br/>create worktree + branch →<br/>write plan.md with checkable criteria"]
+    Resume --> Delegate
+    Fresh --> Delegate["Delegate round N<br/>worker subagent → scripts/run_backend.sh<br/>(sandboxed, inside the worktree)"]
+    Delegate --> Implement["Backend implements<br/>writes report-N.md, test-N.txt, log-N.txt"]
+    Implement --> D2{"Criteria + test-N.txt pass,<br/>AND no guardrail hit?"}
+    D2 -->|no, round &lt; 3| Feedback["Write feedback-N.md<br/>round += 1"]
+    Feedback --> Delegate
+    D2 -->|no, round == 3| StopBad(["Stop:<br/>report what's still wrong"])
+    D2 -->|yes| StopGood["Stop:<br/>surface the diff for your review<br/>— nothing merged or pushed automatically"]
+    StopGood --> Human["You: merge or discard the branch"]
+    Human -.-> Finish(["Finishing:<br/>remove worktree, delete branch"])
+
+    classDef start fill:#F1F5F9,stroke:#64748B,color:#1E293B,stroke-width:2px;
+    classDef decision fill:#FFF7ED,stroke:#EA580C,color:#7C2D12,stroke-width:2px;
+    classDef cool fill:#ECFEFF,stroke:#0891B2,color:#164E63,stroke-width:2px;
+    classDef work fill:#EEF2FF,stroke:#6366F1,color:#312E81,stroke-width:2px;
+    classDef good fill:#F0FDF4,stroke:#16A34A,color:#14532D,stroke-width:2px;
+    classDef bad fill:#FEF2F2,stroke:#DC2626,color:#7F1D1D,stroke-width:2px;
+    classDef human fill:#F1F5F9,stroke:#64748B,color:#1E293B,stroke-width:2px;
+
+    class Start,Finish start;
+    class D1,D2 decision;
+    class Resume,Fresh cool;
+    class Delegate,Implement work;
+    class StopGood good;
+    class Feedback,StopBad bad;
+    class Human human;
+```
 
 ## Prerequisites
 
@@ -146,6 +185,26 @@ what runs underneath.
 ## Guardrails — keeping autonomous runs from doing something you didn't want
 
 Three layers, so no single flag or forgotten check leaves you exposed:
+
+```mermaid
+flowchart TD
+    L1["Layer 1 — Isolation<br/>every task runs in its own git worktree<br/>on branch agent/&lt;task-id&gt;, never your checked-out branch"]
+    L2["Layer 2 — Guardrails as policy<br/>AGENTS.md's written deny-list: git push, schema/migration<br/>changes, .env/CI edits, lockfile changes, out-of-scope deletions.<br/>The reviewer checks every round's diff against it"]
+    L3["Layer 3 — Guardrails as mechanism<br/>Codex: -s workspace-write -a never (sandboxed, no network)<br/>OpenCode: opencode.json explicit &quot;deny&quot; rules"]
+    Exception["Approved exception in plan.md<br/>(e.g. an explicit dependency bump)"]
+    Loosen(["Loosen layer 3 for exactly<br/>that one round..."])
+    Restore(["...then restore it immediately after,<br/>pass or fail (AGENTS.md)"])
+
+    L1 --> L2 --> L3
+    Exception -.-> Loosen -.-> L3
+    L3 -.-> Restore
+
+    classDef layer fill:#EFF6FF,stroke:#3B82F6,color:#1E3A8A,stroke-width:2px;
+    classDef exception fill:#FFF7ED,stroke:#EA580C,color:#7C2D12,stroke-width:2px;
+
+    class L1,L2,L3 layer;
+    class Exception,Loosen,Restore exception;
+```
 
 1. **Isolation.** Every task runs in its own `git worktree` on branch
    `agent/<task-id>` — never your checked-out branch. You always get a diff
